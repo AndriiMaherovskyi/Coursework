@@ -1,4 +1,4 @@
-#import pycuda.driver as cuda
+import pycuda.driver as cuda
 import numpy as np
 from pycuda import driver, compiler, gpuarray
 import pycuda.autoinit  # Автоматичне ініціалізування контексту
