@@ -62,16 +62,7 @@ def k_means(data, k, max_iterations=100):
 
     return clusters, centroids
 
-
-if __name__ == "__main__":
-    # Читаємо CSV-файл
-    df = pd.read_csv('Worldbank-data-2020.csv')
-
-    # Перша колонка містить назву країни
-    first_column = df.columns[0]
-    # Остання колонка містить числові дані
-    last_column = df.columns[-1]
-
+def make_indicator_dictionary(first_column, last_column):
     first_elements = df[first_column].to_numpy()  # перетворюємо у масив NumPy
     last_elements = df[last_column].to_numpy()  # перетворюємо у масив NumPy
 
@@ -88,18 +79,71 @@ if __name__ == "__main__":
     grouped_with_country = []
 
     for idx, group in enumerate(grouped_array):
-        country_name = first_elements[idx*13]
+        country_name = first_elements[idx * 13]
         # Створюємо словник з назвою країни та підмасивом даних
         country_data = {country_name: group}
         grouped_with_country.append(country_data)
 
+    return grouped_with_country
 
+def make_capital_dictionary(name_column, coordinate_column):
+    name_elements = capitals[name_column].to_numpy()  # перетворюємо у масив NumPy
+    coordinate_elements = capitals[coordinate_column].to_numpy()  # перетворюємо у масив NumPy
+    # print(coordinate_elements)
+
+    grouped_with_country = []
+
+    for idx, group in enumerate(coordinate_elements):
+        country_name = name_elements[idx]
+        # Створюємо словник з назвою країни та підмасивом даних
+        country_data = {country_name: group}
+        grouped_with_country.append(country_data)
+
+    return grouped_with_country
+
+def show_clusters(clusters):
+    for cluster_index, cluster_data in clusters.items():
+        country_names = [list(item.keys())[0] for item in cluster_data]
+        print(f"Cluster {cluster_index}: {country_names}")
+
+if __name__ == "__main__":
+    # Читаємо CSV-файл
+    df = pd.read_csv('Worldbank-data-2020.csv')
+
+    # Перша колонка містить назву країни
+    first_column = df.columns[0]
+    # Остання колонка містить числові дані
+    last_column = df.columns[-1]
+
+    grouped_with_country = make_indicator_dictionary(first_column, last_column)
+
+    print(f"Countries quantity(indicators): {len(grouped_with_country)}")
     # Виклик K-means алгоритму
     k = 8  # Кількість кластерів
     clusters, centroids = k_means(grouped_with_country, k)
-    print("Clusters:", clusters[0])
-    print("Centroids:", centroids)
 
+    print("Indicators clusters:")
+    show_clusters(clusters)
+
+    # print("Clusters:", clusters)
+    # print("Centroids:", centroids)
+
+    capitals = pd.read_csv('capitals-location.csv')
+
+    # Перша колонка містить назву країни
+    name_column = capitals.columns[0]
+    # Остання колонка містить числові дані
+    coordinate_column = capitals.columns[2:4]
+
+    grouped_with_country = make_capital_dictionary(name_column, coordinate_column)
+
+    print("\n --- --- --- --- --- --- --- --- --- --- ---\n")
+    print(f"Countries quantity(capitals): {len(grouped_with_country)}")
+    k = 8  # Кількість кластерів
+    clusters, centroids = k_means(grouped_with_country, k)
+
+    print("Capitals clusters:")
+    show_clusters(clusters)
 
 # with open('dataset-ucdp-prio-conflict.csv', newline='') as csvfile:
 #     reader = csv.reader(csvfile)
