@@ -1,5 +1,6 @@
 import pycuda.driver as cuda
 import numpy as np
+import pandas as pd
 from pycuda import driver, compiler, gpuarray
 import pycuda.autoinit
 import csv
@@ -9,51 +10,140 @@ import random
 
 def initialize_centroids(data, k):
     # Ініціалізує центроїди випадковими точками з набору даних.
-    data_list = data.tolist()
-    centroids = random.sample(data_list, k)
+    centroids = random.sample(data, k)
     return centroids
 
 
 def assign_to_clusters(data, centroids):
-    # Призначає кожен зразок даних до найближчого центроїда.
     clusters = {}
-    for point in data:
-        closest_centroid_index = np.argmin([np.linalg.norm(point - centroid) for centroid in centroids])
+    k = len(centroids)
+
+    # Перебираємо кожен словник у data
+    for idx, item in enumerate(data):
+        country_name = list(item.keys())[0]
+        values = np.array(list(item.values())[0])
+        closest_centroid_index = np.argmin([np.linalg.norm(values - list(c.values())[0]) for c in centroids])
         if closest_centroid_index not in clusters:
             clusters[closest_centroid_index] = []
-        clusters[closest_centroid_index].append(point)
+
+        clusters[closest_centroid_index].append({country_name: values})
     return clusters
 
 
 def update_centroids(clusters):
-    # Перераховує центроїди на основі зразків, що належать до кластерів.
     centroids = []
     for cluster_index in clusters:
-        centroids.append(np.mean(clusters[cluster_index], axis=0)) # обчислює середнє значення
+        # Отримуємо список масивів даних у кластері
+        cluster_data = [list(v.values())[0] for v in clusters[cluster_index]]
+        # Розраховуємо середнє значення для кожного виміру
+        centroid = np.mean(cluster_data, axis=0)
+        # Створюємо новий центроїд у вигляді словника з ідентифікатором кластера
+        centroids.append({f"Cluster_{cluster_index}": centroid})
+
     return centroids
 
 
 def k_means(data, k, max_iterations=100):
-    # Реалізація алгоритму k-середніх.
     centroids = initialize_centroids(data, k)
     for _ in range(max_iterations):
         clusters = assign_to_clusters(data, centroids)
         new_centroids = update_centroids(clusters)
-        # Перевірка на збіг центроїдів
-        if np.array_equal(new_centroids, centroids):
+
+        # Перевірка, чи збігаються нові центроїди зі старими
+        is_converged = all(
+            np.allclose(list(centroid.values())[0], list(new_centroid.values())[0])
+            for centroid, new_centroid in zip(centroids, new_centroids)
+        )
+
+        if is_converged:
             break
+
         centroids = new_centroids
+
     return clusters, centroids
 
+def make_indicator_dictionary(first_column, last_column):
+    first_elements = df[first_column].to_numpy()  # перетворюємо у масив NumPy
+    last_elements = df[last_column].to_numpy()  # перетворюємо у масив NumPy
+
+    # Заміна значень '..' на 0 та перетворення на float
+    last_elements = np.where(last_elements == '..', 0, last_elements)  # замінюємо '..' на 0
+    last_elements = last_elements.astype(float)  # перетворюємо в float
+
+    # Тепер розділимо цей масив на групи по 13 елементів
+    group_size = 13
+    num_groups = len(last_elements) // group_size
+    grouped_array = np.array(np.array_split(last_elements[:num_groups * group_size], num_groups))
+
+    # Додаємо назву країни до кожної групи
+    grouped_with_country = []
+
+    for idx, group in enumerate(grouped_array):
+        country_name = first_elements[idx * 13]
+        # Створюємо словник з назвою країни та підмасивом даних
+        country_data = {country_name: group}
+        grouped_with_country.append(country_data)
+
+    return grouped_with_country
+
+def make_capital_dictionary(name_column, coordinate_column):
+    name_elements = capitals[name_column].to_numpy()  # перетворюємо у масив NumPy
+    coordinate_elements = capitals[coordinate_column].to_numpy()  # перетворюємо у масив NumPy
+    # print(coordinate_elements)
+
+    grouped_with_country = []
+
+    for idx, group in enumerate(coordinate_elements):
+        country_name = name_elements[idx]
+        # Створюємо словник з назвою країни та підмасивом даних
+        country_data = {country_name: group}
+        grouped_with_country.append(country_data)
+
+    return grouped_with_country
+
+def show_clusters(clusters):
+    for cluster_index, cluster_data in clusters.items():
+        country_names = [list(item.keys())[0] for item in cluster_data]
+        print(f"Cluster {cluster_index}: {country_names}")
 
 if __name__ == "__main__":
-    # Припустимо, що data - це ваш набір даних у форматі numpy array
-    data = np.array([[1, 2], [2, 3], [4, 5], [7, 8], [10, 11], [12, 13]])
-    k = 2  # Кількість кластерів
-    clusters, centroids = k_means(data, k)
-    print("Clusters:", clusters)
-    print("Centroids:", centroids)
+    # Читаємо CSV-файл
+    df = pd.read_csv('Worldbank-data-2020.csv')
 
+    # Перша колонка містить назву країни
+    first_column = df.columns[0]
+    # Остання колонка містить числові дані
+    last_column = df.columns[-1]
+
+    grouped_with_country = make_indicator_dictionary(first_column, last_column)
+
+    print(f"Countries quantity(indicators): {len(grouped_with_country)}")
+    # Виклик K-means алгоритму
+    k = 8  # Кількість кластерів
+    clusters, centroids = k_means(grouped_with_country, k)
+
+    print("Indicators clusters:")
+    show_clusters(clusters)
+
+    # print("Clusters:", clusters)
+    # print("Centroids:", centroids)
+
+    capitals = pd.read_csv('capitals-location.csv')
+
+    # Перша колонка містить назву країни
+    name_column = capitals.columns[0]
+    # Остання колонка містить числові дані
+    coordinate_column = capitals.columns[2:4]
+
+    grouped_with_country = make_capital_dictionary(name_column, coordinate_column)
+
+    print("\n --- --- --- --- --- --- --- --- --- --- ---\n")
+    print(f"Countries quantity(capitals): {len(grouped_with_country)}")
+    k = 8  # Кількість кластерів
+    clusters, centroids = k_means(grouped_with_country, k)
+
+    print("Capitals clusters:")
+    show_clusters(clusters)
 
 # with open('dataset-ucdp-prio-conflict.csv', newline='') as csvfile:
 #     reader = csv.reader(csvfile)
