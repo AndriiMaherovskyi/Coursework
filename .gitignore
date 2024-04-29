@@ -1,2 +1,9 @@
 # created by virtualenv automatically
-/venv/
+venvv/
+*.iml
+.idea
+venv/
+.env/
+env/
+.venv/
+*.xml
