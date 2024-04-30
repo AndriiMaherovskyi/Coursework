@@ -163,6 +163,33 @@ def convert_clusters_to_arrays(clusters):
 
     return np.array(X), np.array(labels)
 
+# Функція групує дані обох типів кластеризації у єдиний масив
+def next_step_clustering_list(clusters_f, clusters_s):
+    new_dict = {}
+    # Перший цикл: додаємо перший елемент в список для кожного ключа
+    for cluster_f_index, cluster_f_data in clusters_f.items():
+        for item in cluster_f_data:
+            key = list(item.keys())[0]  # передбачається, що keys() повертає щонайменше один ключ
+            if key not in new_dict:
+                new_dict[key] = np.array([0, 0])  # ініціалізуємо список з двома елементами
+            new_dict[key][0] = cluster_f_index  # встановлюємо перший елемент списку
+            new_dict[key][1] = cluster_f_index
+
+    # Другий цикл: додаємо другий елемент в список для кожного ключа
+    for cluster_s_index, cluster_s_data in clusters_s.items():
+        for item in cluster_s_data:
+            key = list(item.keys())[0]  # отримуємо перший ключ
+            if key not in new_dict:
+                new_dict[key] = np.array([0, 0])  # ініціалізуємо список, якщо його ще немає
+            new_dict[key][1] = cluster_s_index  # встановлюємо другий елемент списку
+            if new_dict[key][0] == 0: new_dict[key][0] = new_dict[key][1]
+
+    # Перетворення словника у список словників
+    result = [{key: value} for key, value in new_dict.items()]
+    return result
+
+
+
 
 if __name__ == "__main__":
     # Читаємо CSV-файл
@@ -200,6 +227,22 @@ if __name__ == "__main__":
     # вивід метрик
     X_s, labels_s = convert_clusters_to_arrays(clusters_s)
     evaluate_clustering(X_s, labels_s)
+
+    # Комбінована кластеризація
+
+    nex_step_dict = next_step_clustering_list(clusters_f, clusters_s)
+    print("\n --- --- --- --- --- --- --- --- --- --- ---\n")
+    print(f"Indicators and capitals(Combine): {len(grouped_with_country)}")
+    k = 7  # Кількість кластерів
+    clusters_l, centroids_l = k_means(nex_step_dict, k)
+
+    print("Combine clusters:")
+    show_clusters(clusters_l)
+    plot_clusters(clusters_l, centroids_l, 'Combine')  # Plot відображення утворених кластерів
+
+    # вивід метрик
+    X_l, labels_l = convert_clusters_to_arrays(clusters_l)
+    evaluate_clustering(X_l, labels_l)
 
 # # Create a CUDA context
 # device = driver.Device(0) # Визначає кількість підключених відеокарт, рахуємо від 0
