@@ -8,6 +8,97 @@ import csv
 import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 
+##############################################################
+from pycuda.compiler import SourceModule
+
+def cuda_kernel(data_o, centroids_o):
+
+    # Функція на CUDA для знаходження найближчого центроїда
+    cuda_code = """
+    __global__ void assign_to_clusters(float *data, float *centroids, int *result, int num_data, int num_centroids, int data_size) {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= num_data) return;
+    
+        float min_distance = 1e10;
+        int closest_centroid = -1;
+    
+        for (int i = 0; i < num_centroids; i++) {
+            float distance = 0;
+            for (int j = 0; j < data_size; j++) {
+                float diff = data[idx * data_size + j] - centroids[i * data_size + j];
+                distance += diff * diff;
+            }
+            if (distance < min_distance) {
+                min_distance = distance;
+                closest_centroid = i;
+            }
+        }
+    
+        result[idx] = closest_centroid;
+    }
+    """
+
+    # Скомпілюємо ядро
+    mod = SourceModule(cuda_code)
+    assign_kernel = mod.get_function("assign_to_clusters")
+
+    # Створимо зразкові дані та центроїди
+    data = data_o
+    centroids = centroids_o
+
+    # Перетворимо дані на одномірні масиви
+    data_array = np.array([list(item.values())[0] for item in data], dtype=np.float32).flatten()
+    centroid_array = np.array([list(c.values())[0] for c in centroids], dtype=np.float32).flatten()
+
+    # Виділимо пам'ять на GPU та скопіюємо дані
+    data_gpu = cuda.mem_alloc(data_array.nbytes)
+    centroid_gpu = cuda.mem_alloc(centroid_array.nbytes)
+    cuda.memcpy_htod(data_gpu, data_array)
+    cuda.memcpy_htod(centroid_gpu, centroid_array)
+
+    # Підготуємо масив для результатів (індекси кластера)
+    num_data = len(data)
+    result_gpu = cuda.mem_alloc(num_data * 4)  # int32
+    result_cpu = np.zeros(num_data, dtype=np.int32)
+
+    # Визначимо параметри блоків та сітки
+    block_size = 256
+    grid_size = (num_data + block_size - 1) // block_size
+
+    # Запустимо ядро
+    assign_kernel(data_gpu, centroid_gpu, result_gpu, np.int32(num_data), np.int32(len(centroids)), np.int32(2),
+                  block=(block_size, 1, 1), grid=(grid_size, 1))
+
+    # Скопіюємо результат з GPU на CPU
+    cuda.memcpy_dtoh(result_cpu, result_gpu)
+
+    # Створимо словник кластера за отриманими результатами
+    clusters = {}
+
+    for idx, cluster_idx in enumerate(result_cpu):
+        country_name = list(data[idx].keys())[0]
+        values = np.array(list(data[idx].values())[0])
+
+        if cluster_idx not in clusters:
+            clusters[cluster_idx] = []
+
+        clusters[cluster_idx].append({country_name: values})
+
+    return clusters
+
+data = [
+        {"Country1": np.array([1.0, 2.0])},
+        {"Country2": np.array([4.0, 5.0])},
+        {"Country3": np.array([6.0, 7.0])}
+    ]
+centroids = [
+    {"Centroid1": np.array([1.5, 2.5])},
+    {"Centroid2": np.array([5.0, 6.0])}
+]
+clusters = cuda_kernel(data, centroids)
+print("Clusters:", clusters)
+
+#############################################################
 
 def plot_clusters(clusters, centroids, dataset_name, iteration=None):
     colors = ['r', 'g', 'b', 'y', 'c', 'm', 'purple', 'orange']
@@ -39,19 +130,19 @@ def plot_clusters(clusters, centroids, dataset_name, iteration=None):
     plt.show()
 
 
-def assign_to_clusters(data, centroids):
-    clusters = {}
-
-    # Перебираємо кожен словник у data
-    for idx, item in enumerate(data):
-        country_name = list(item.keys())[0]
-        values = np.array(list(item.values())[0])
-        closest_centroid_index = np.argmin([np.linalg.norm(values - list(c.values())[0]) for c in centroids])
-        if closest_centroid_index not in clusters:
-            clusters[closest_centroid_index] = []
-
-        clusters[closest_centroid_index].append({country_name: values})
-    return clusters
+# def assign_to_clusters(data, centroids):
+#     clusters = {}
+#
+#     # Перебираємо кожен словник у data
+#     for idx, item in enumerate(data):
+#         country_name = list(item.keys())[0]
+#         values = np.array(list(item.values())[0])
+#         closest_centroid_index = np.argmin([np.linalg.norm(values - list(c.values())[0]) for c in centroids])
+#         if closest_centroid_index not in clusters:
+#             clusters[closest_centroid_index] = []
+#
+#         clusters[closest_centroid_index].append({country_name: values})
+#     return clusters
 
 
 def update_centroids(clusters):
@@ -71,7 +162,8 @@ def k_means(data, k, max_iterations=100):
     centroids = random.sample(data, k)
     clusters = {}
     for i in range(max_iterations):
-        clusters = assign_to_clusters(data, centroids)
+        #clusters = assign_to_clusters(data, centroids)
+        clusters = cuda_kernel(data, centroids)
         new_centroids = update_centroids(clusters)
 
         # Check convergence
