@@ -7,98 +7,12 @@ import pycuda.autoinit
 import csv
 import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+from time import time
 
-##############################################################
-from pycuda.compiler import SourceModule
-
-def cuda_kernel(data_o, centroids_o):
-
-    # Функція на CUDA для знаходження найближчого центроїда
-    cuda_code = """
-    __global__ void assign_to_clusters(float *data, float *centroids, int *result, int num_data, int num_centroids, int data_size) {
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx >= num_data) return;
-    
-        float min_distance = 1e10;
-        int closest_centroid = -1;
-    
-        for (int i = 0; i < num_centroids; i++) {
-            float distance = 0;
-            for (int j = 0; j < data_size; j++) {
-                float diff = data[idx * data_size + j] - centroids[i * data_size + j];
-                distance += diff * diff;
-            }
-            if (distance < min_distance) {
-                min_distance = distance;
-                closest_centroid = i;
-            }
-        }
-    
-        result[idx] = closest_centroid;
-    }
-    """
-
-    # Скомпілюємо ядро
-    mod = SourceModule(cuda_code)
-    assign_kernel = mod.get_function("assign_to_clusters")
-
-    # Створимо зразкові дані та центроїди
-    data = data_o
-    centroids = centroids_o
-
-    # Перетворимо дані на одномірні масиви
-    data_array = np.array([list(item.values())[0] for item in data], dtype=np.float32).flatten()
-    centroid_array = np.array([list(c.values())[0] for c in centroids], dtype=np.float32).flatten()
-
-    # Виділимо пам'ять на GPU та скопіюємо дані
-    data_gpu = cuda.mem_alloc(data_array.nbytes)
-    centroid_gpu = cuda.mem_alloc(centroid_array.nbytes)
-    cuda.memcpy_htod(data_gpu, data_array)
-    cuda.memcpy_htod(centroid_gpu, centroid_array)
-
-    # Підготуємо масив для результатів (індекси кластера)
-    num_data = len(data)
-    result_gpu = cuda.mem_alloc(num_data * 4)  # int32
-    result_cpu = np.zeros(num_data, dtype=np.int32)
-
-    # Визначимо параметри блоків та сітки
-    block_size = 256
-    grid_size = (num_data + block_size - 1) // block_size
-
-    # Запустимо ядро
-    assign_kernel(data_gpu, centroid_gpu, result_gpu, np.int32(num_data), np.int32(len(centroids)), np.int32(2),
-                  block=(block_size, 1, 1), grid=(grid_size, 1))
-
-    # Скопіюємо результат з GPU на CPU
-    cuda.memcpy_dtoh(result_cpu, result_gpu)
-
-    # Створимо словник кластера за отриманими результатами
-    clusters = {}
-
-    for idx, cluster_idx in enumerate(result_cpu):
-        country_name = list(data[idx].keys())[0]
-        values = np.array(list(data[idx].values())[0])
-
-        if cluster_idx not in clusters:
-            clusters[cluster_idx] = []
-
-        clusters[cluster_idx].append({country_name: values})
-
-    return clusters
-
-data = [
-        {"Country1": np.array([1.0, 2.0])},
-        {"Country2": np.array([4.0, 5.0])},
-        {"Country3": np.array([6.0, 7.0])}
-    ]
-centroids = [
-    {"Centroid1": np.array([1.5, 2.5])},
-    {"Centroid2": np.array([5.0, 6.0])}
-]
-clusters = cuda_kernel(data, centroids)
-print("Clusters:", clusters)
-
-#############################################################
+from K_Means import k_means
+from GPU_K_Means import k_means_gpu
+from Dictionary_and_arrays_converts import (make_indicator_dictionary, make_capital_dictionary,
+                                            convert_clusters_to_arrays, next_step_clustering_list)
 
 def plot_clusters(clusters, centroids, dataset_name, iteration=None):
     colors = ['r', 'g', 'b', 'y', 'c', 'm', 'purple', 'orange']
@@ -130,100 +44,6 @@ def plot_clusters(clusters, centroids, dataset_name, iteration=None):
     plt.show()
 
 
-# def assign_to_clusters(data, centroids):
-#     clusters = {}
-#
-#     # Перебираємо кожен словник у data
-#     for idx, item in enumerate(data):
-#         country_name = list(item.keys())[0]
-#         values = np.array(list(item.values())[0])
-#         closest_centroid_index = np.argmin([np.linalg.norm(values - list(c.values())[0]) for c in centroids])
-#         if closest_centroid_index not in clusters:
-#             clusters[closest_centroid_index] = []
-#
-#         clusters[closest_centroid_index].append({country_name: values})
-#     return clusters
-
-
-def update_centroids(clusters):
-    centroids = []
-    for cluster_index in clusters:
-        # Отримуємо список масивів даних у кластері
-        cluster_data = [list(v.values())[0] for v in clusters[cluster_index]]
-        # Розраховуємо середнє значення для кожного виміру
-        centroid = np.mean(cluster_data, axis=0)
-        # Створюємо новий центроїд у вигляді словника з ідентифікатором кластера
-        centroids.append({f"Cluster_{cluster_index}": centroid})
-
-    return centroids
-
-
-def k_means(data, k, max_iterations=100):
-    centroids = random.sample(data, k)
-    clusters = {}
-    for i in range(max_iterations):
-        #clusters = assign_to_clusters(data, centroids)
-        clusters = cuda_kernel(data, centroids)
-        new_centroids = update_centroids(clusters)
-
-        # Check convergence
-        is_converged = all(
-            np.allclose(list(centroid.values())[0], list(new_centroid.values())[0])
-            for centroid, new_centroid in zip(centroids, new_centroids)
-        )
-
-        if i == 0:
-            plot_clusters(clusters, new_centroids, 'K-means Clusters', 0)
-
-        if is_converged:
-            break
-
-        centroids = new_centroids
-
-    return clusters, centroids
-
-
-def make_indicator_dictionary(first_column, last_column):
-    first_elements = df[first_column].to_numpy()  # перетворюємо у масив NumPy
-    last_elements = df[last_column].to_numpy()  # перетворюємо у масив NumPy
-
-    # Заміна значень '..' на 0 та перетворення на float
-    last_elements = np.where(last_elements == '..', 0, last_elements)  # замінюємо '..' на 0
-    last_elements = last_elements.astype(float)  # перетворюємо в float
-
-    # Тепер розділимо цей масив на групи по 13/1492 елементів
-    #group_size = 13
-    group_size = 1492
-    num_groups = len(last_elements) // group_size
-    grouped_array = np.array(np.array_split(last_elements[:num_groups * group_size], num_groups))
-
-    # Додаємо назву країни до кожної групи
-    grouped_with_country = []
-
-    for idx, group in enumerate(grouped_array):
-        country_name = first_elements[idx * 1492]
-        # Створюємо словник з назвою країни та підмасивом даних
-        country_data = {country_name: group}
-        grouped_with_country.append(country_data)
-
-    return grouped_with_country
-
-
-def make_capital_dictionary(name_column, coordinate_column):
-    name_elements = capitals[name_column].to_numpy()  # перетворюємо у масив NumPy
-    coordinate_elements = capitals[coordinate_column].to_numpy()  # перетворюємо у масив NumPy
-    # print(coordinate_elements)
-
-    grouped_with_country = []
-
-    for idx, group in enumerate(coordinate_elements):
-        country_name = name_elements[idx]
-        # Створюємо словник з назвою країни та підмасивом даних
-        country_data = {country_name: group}
-        grouped_with_country.append(country_data)
-
-    return grouped_with_country
-
 
 def show_clusters(clusters):
     for cluster_index, cluster_data in clusters.items():
@@ -243,44 +63,6 @@ def evaluate_clustering(X, labels):
     print(f"Індекс Каліна-Харабаша: {ch_score}")
 
 
-def convert_clusters_to_arrays(clusters):
-    # Перетворює кластери на 2D масиви даних і 1D масиви міток
-    X = []
-    labels = []
-    for cluster_index, cluster_data in clusters.items():
-        for item in cluster_data:
-            values = list(item.values())[0]
-            X.append(values)
-            labels.append(cluster_index)
-
-    return np.array(X), np.array(labels)
-
-# Функція групує дані обох типів кластеризації у єдиний масив
-def next_step_clustering_list(clusters_f, clusters_s):
-    new_dict = {}
-    # Перший цикл: додаємо перший елемент в список для кожного ключа
-    for cluster_f_index, cluster_f_data in clusters_f.items():
-        for item in cluster_f_data:
-            key = list(item.keys())[0]  # передбачається, що keys() повертає щонайменше один ключ
-            if key not in new_dict:
-                new_dict[key] = np.array([0, 0])  # ініціалізуємо список з двома елементами
-            new_dict[key][0] = cluster_f_index  # встановлюємо перший елемент списку
-            new_dict[key][1] = cluster_f_index
-
-    # Другий цикл: додаємо другий елемент в список для кожного ключа
-    for cluster_s_index, cluster_s_data in clusters_s.items():
-        for item in cluster_s_data:
-            key = list(item.keys())[0]  # отримуємо перший ключ
-            if key not in new_dict:
-                new_dict[key] = np.array([0, 0])  # ініціалізуємо список, якщо його ще немає
-            new_dict[key][1] = cluster_s_index  # встановлюємо другий елемент списку
-            if new_dict[key][0] == 0: new_dict[key][0] = new_dict[key][1]
-
-    # Перетворення словника у список словників
-    result = [{key: value} for key, value in new_dict.items()]
-    return result
-
-
 
 
 if __name__ == "__main__":
@@ -292,15 +74,37 @@ if __name__ == "__main__":
     grouped_with_country = make_indicator_dictionary(first_column, last_column)
     print(f"Countries quantity(indicators): {len(grouped_with_country)}")
     k = 7  # Кількість кластерів
-    clusters_f, centroids_f = k_means(grouped_with_country, k)
 
-    print("Indicators clusters:")
-    show_clusters(clusters_f)
-    plot_clusters(clusters_f, centroids_f, 'Indicators')
+    # Час виконання на CPU
+    start_time = time()
+    clusters_i, centroids_i = k_means(grouped_with_country, k)
+    cpu_time = time() - start_time
+
+    print("Clusters (CPU):")
+    show_clusters(clusters_i)
+    print(f"CPU Time: {cpu_time:.5f} seconds")
+    print()
+    plot_clusters(clusters_i, centroids_i, 'Capitals')  # Plot відображення утворених кластерів
 
     # вивід метрик
-    X_f, labels_f = convert_clusters_to_arrays(clusters_f)
-    evaluate_clustering(X_f, labels_f)
+    X_i, labels_i = convert_clusters_to_arrays(clusters_i)
+    evaluate_clustering(X_i, labels_i)
+
+    start_time = time()
+    clusters_ig, centroids_ig = k_means_gpu(grouped_with_country, k)
+    elapsed_time = time() - start_time
+
+    print("Clusters(GPU):")
+    show_clusters(clusters_ig)
+    print(f"GPU Time: {elapsed_time:.5f} seconds")
+    print()
+
+    # вивід метрик
+    X_ig, labels_ig = convert_clusters_to_arrays(clusters_ig)
+    print("GPU Evaluation:")
+    evaluate_clustering(X_ig, labels_ig)
+
+    # --- ---- Столиці ---- ---
 
     capitals = pd.read_csv('capitals-location.csv')
     name_column = capitals.columns[0]  # Перша колонка містить назву країни
@@ -310,78 +114,71 @@ if __name__ == "__main__":
     print("\n --- --- --- --- --- --- --- --- --- --- ---\n")
     print(f"Countries quantity(capitals): {len(grouped_with_country)}")
     k = 7  # Кількість кластерів
-    clusters_s, centroids_s = k_means(grouped_with_country, k)
 
-    print("Capitals clusters:")
+    # Час виконання на CPU
+    start_time = time()
+    clusters_f, centroids_f = k_means(grouped_with_country, k)
+    cpu_time = time() - start_time
+
+    print("Clusters (CPU):")
+    show_clusters(clusters_f)
+    print(f"CPU Time: {cpu_time:.5f} seconds")
+    print()
+    plot_clusters(clusters_f, centroids_f, 'Capitals')  # Plot відображення утворених кластерів
+
+    # Час виконання на GPU
+    start_time = time()
+    clusters_s, centroids_s = k_means_gpu(grouped_with_country, k)
+    elapsed_time = time() - start_time
+
+    print("Clusters(GPU):")
     show_clusters(clusters_s)
-    plot_clusters(clusters_s, centroids_s, 'Capitals')  # Plot відображення утворених кластерів
+    print(f"GPU Time: {elapsed_time:.5f} seconds")
+    print()
+    #plot_clusters(clusters_s, centroids_s, 'Capitals')  # Plot відображення утворених кластерів
 
-    # вивід метрик
-    X_s, labels_s = convert_clusters_to_arrays(clusters_s)
-    evaluate_clustering(X_s, labels_s)
+    # Метрики для обох підходів
+    X_gpu, labels_gpu = convert_clusters_to_arrays(clusters_s)
+    print("GPU Evaluation:")
+    evaluate_clustering(X_gpu, labels_gpu)
 
-    # Комбінована кластеризація
 
-    nex_step_dict = next_step_clustering_list(clusters_f, clusters_s)
+    # --- ---- Комбінована кластеризація ---- ---
+
+    nex_step_dict = next_step_clustering_list(clusters_i, clusters_f)
     print("\n --- --- --- --- --- --- --- --- --- --- ---\n")
     print(f"Indicators and capitals(Combine): {len(grouped_with_country)}")
     k = 7  # Кількість кластерів
+
+
+    # Час виконання на CPU
+    start_time = time()
     clusters_l, centroids_l = k_means(nex_step_dict, k)
+    cpu_time = time() - start_time
 
-    print("Combine clusters:")
+    print("Clusters (CPU):")
     show_clusters(clusters_l)
-    plot_clusters(clusters_l, centroids_l, 'Combine')  # Plot відображення утворених кластерів
+    print(f"CPU Time: {cpu_time:.5f} seconds")
+    print()
+    plot_clusters(clusters_l, centroids_l, 'Capitals')  # Plot відображення утворених кластерів
 
-    # вивід метрик
-    X_l, labels_l = convert_clusters_to_arrays(clusters_l)
-    evaluate_clustering(X_l, labels_l)
+    X_gpu, labels_gpu = convert_clusters_to_arrays(clusters_l)
+    print("GPU Evaluation:")
+    evaluate_clustering(X_gpu, labels_gpu)
+    print()
 
-# # Create a CUDA context
-# device = driver.Device(0) # Визначає кількість підключених відеокарт, рахуємо від 0
-# context = device.make_context()
-#
-# # Define the CUDA kernel
-# kernel_code = """
-# __global__ void add_arrays(float *a, float *b, float *c) {
-#     int i = threadIdx.x;
-#     c[i] = a[i] + b[i];
-# }
-# """
-#
-# # Compile the CUDA kernel
-# module = compiler.SourceModule(kernel_code)
-#
-# '''
-#     Поки залишаю приклад з сайту по масивах, потім будемо щось тут створювати
-# '''
-# # Allocate memory on the GPU
-# a_gpu = gpuarray.to_gpu(np.random.randn(100).astype(np.float32))
-# b_gpu = gpuarray.to_gpu(np.random.randn(100).astype(np.float32))
-# c_gpu = gpuarray.empty_like(a_gpu)
-#
-# # Create events for timing
-# start = driver.Event()
-# end = driver.Event()
-#
-# # Start timing
-# start.record()
-#
-# # Launch the CUDA kernel
-# add_arrays = module.get_function("add_arrays")
-# add_arrays(a_gpu, b_gpu, c_gpu, block=(100,1,1))
-#
-# # Stop timing
-# end.record()
-# end.synchronize()  # Очікування завершення всіх операцій
-# elapsed_time_ms = start.time_till(end)  # Час у мілісекундах
-#
-# # Copy the result back to the CPU
-# c_cpu = c_gpu.get()
-# print(c_cpu)
-# print("Elapsed time (ms):", elapsed_time_ms)
-#
-# # Clean up context
-# context = pycuda.autoinit.context
-#
-# # Clean up
-# context.pop()
+    print("--- --- --- Розпаралелений результат --- --- ---")
+    # Час виконання на GPU
+    start_time = time()
+    clusters_lg, centroids_lg = k_means_gpu(nex_step_dict, k)
+    elapsed_time = time() - start_time
+
+    print("Clusters(GPU):")
+    show_clusters(clusters_lg)
+    print(f"GPU Time: {elapsed_time:.5f} seconds")
+    print()
+
+    # Метрики
+    X_gpu, labels_gpu = convert_clusters_to_arrays(clusters_lg)
+    print("GPU Evaluation:")
+    evaluate_clustering(X_gpu, labels_gpu)
