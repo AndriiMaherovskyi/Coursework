@@ -76,7 +76,7 @@ if __name__ == "__main__":
     df = pd.read_csv('Worldbank-data-all.csv')
     first_column = df.columns[0]  # Перша колонка містить назву країни
     last_column = df.columns[-1]  # Остання колонка містить числові дані
-    grouped_with_country = make_indicator_dictionary(first_column, last_column)
+    grouped_with_country = make_indicator_dictionary(first_column, last_column, 'i')
     print(f"Countries quantity(indicators): {len(grouped_with_country)}")
 
     start_time_s = time()
@@ -129,3 +129,33 @@ if __name__ == "__main__":
     output_scores(X_l_gpu, labels_l_gpu)
 
     plot_clusters(clusters_l_gpu, centroids_l_gpu, 'Combine')
+
+    # --- --- -- Two indicators --- --- ---
+
+    df = pd.read_csv('Indicators-2.csv')
+    first_column = df.columns[0]  # Перша колонка містить назву країни
+    last_column = df.columns[-1]  # Остання колонка містить числові дані
+    grouped_with_country = make_indicator_dictionary(first_column, last_column, 'e')
+    print(f"Countries quantity(two indicators): {len(grouped_with_country)}")
+
+    start_time_e = time()
+    clusters_e, centroids_e = k_means(grouped_with_country, k, 'CPU')
+    cpu_time = time() - start_time_e
+    show_clusters(clusters_e)
+    print(f"CPU Time: {cpu_time:.5f} seconds")
+    print()
+
+    X_e, labels_e = convert_clusters_to_arrays(clusters_e)
+    output_scores(X_e, labels_e)
+
+    start_time_e_gpu = time()
+    clusters_e_gpu, centroids_e_gpu = k_means(grouped_with_country, k, 'GPU')
+    elapsed_time = time() - start_time_e_gpu
+    show_clusters(clusters_e_gpu)
+    print(f"GPU Time: {elapsed_time:.5f} seconds")
+    print()
+
+    X_e_gpu, labels_e_gpu = convert_clusters_to_arrays(clusters_e_gpu)
+    output_scores(X_e_gpu, labels_e_gpu)
+
+    plot_clusters(clusters_e_gpu, centroids_e_gpu, 'Two indicators')

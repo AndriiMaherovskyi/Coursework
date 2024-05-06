@@ -9,10 +9,13 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from time import time
 
-df = pd.read_csv('Worldbank-data-all.csv')
+#df = pd.read_csv('Worldbank-data-all.csv')
 capitals = pd.read_csv('capitals-location.csv')
 
-def make_indicator_dictionary(first_column, last_column):
+def make_indicator_dictionary(first_column, last_column, type):
+    if type == 'i': df = pd.read_csv('Worldbank-data-all.csv')
+    else: df = pd.read_csv('Indicators-2.csv')
+
     first_elements = df[first_column].to_numpy()  # перетворюємо у масив NumPy
     last_elements = df[last_column].to_numpy()  # перетворюємо у масив NumPy
 
@@ -21,8 +24,10 @@ def make_indicator_dictionary(first_column, last_column):
     last_elements = last_elements.astype(float)  # перетворюємо в float
 
     # Тепер розділимо цей масив на групи по 13/1492 елементів
-    #group_size = 13
-    group_size = 1492
+    group_size = int()
+    if type == 'i':
+        group_size = 1492
+    else: group_size = 2
     num_groups = len(last_elements) // group_size
     grouped_array = np.array(np.array_split(last_elements[:num_groups * group_size], num_groups))
 
@@ -30,7 +35,9 @@ def make_indicator_dictionary(first_column, last_column):
     grouped_with_country = []
 
     for idx, group in enumerate(grouped_array):
-        country_name = first_elements[idx * 1492]
+        if type == 'i':
+            country_name = first_elements[idx * 1492]
+        else: country_name = first_elements[idx * 2]
         # Створюємо словник з назвою країни та підмасивом даних
         country_data = {country_name: group}
         grouped_with_country.append(country_data)
