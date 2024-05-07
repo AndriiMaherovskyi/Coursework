@@ -4,7 +4,8 @@ import pycuda.driver as cuda
 from pycuda import compiler
 
 from plot import plot_clusters
-from main import region_names
+
+region_names = ["Західна Європа", "Східна Європа", "Північна Америка", "Південна Америка", "Азія", "Африка", "Океанія"]
 
 
 def cuda_kernel(data_o, centroids_o):

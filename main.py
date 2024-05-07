@@ -1,6 +1,6 @@
 from time import time
 
-from k_means import k_means, show_clusters
+from K_Means import k_means, show_clusters
 from plot import plot_clusters
 from Dictionary_and_arrays_converts import *
 
@@ -8,7 +8,7 @@ region_names = ["Західна Європа", "Східна Європа", "П�
 k = 7
 
 if __name__ == "__main__":
-
+    #  -------------- Столиці ----------- #
     # Читаємо CSV-файл
     capitals = pd.read_csv('capitals-location.csv')
     name_column = capitals.columns[0]  # Перша колонка містить назву країни
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     print()
     plot_clusters(clusters_f, centroids_f, 'Capitals', region_names)
 
-    # вивід метрик
+    # вивід метрик CPU
     X_f, labels_f = convert_clusters_to_arrays(clusters_f)
     output_scores(X_f, labels_f)
 
@@ -44,14 +44,15 @@ if __name__ == "__main__":
     print()
     # plot_clusters(clusters_f_gpu, centroids_f_gpu, 'Capitals')
 
-    # вивід метрик
+    # вивід метрик GPU
     X_f_gpu, labels_f_gpu = convert_clusters_to_arrays(clusters_f_gpu)
     output_scores(X_f_gpu, labels_f_gpu)
 
-    df = pd.read_csv('Worldbank-data-all.csv')
+    # --------- Індикатори -------- #
+
     first_column = df.columns[0]  # Перша колонка містить назву країни
     last_column = df.columns[-1]  # Остання колонка містить числові дані
-    grouped_with_country = make_indicator_dictionary(first_column, last_column)
+    grouped_with_country = make_indicator_dictionary(first_column, last_column, 'i')
     print(f"Countries quantity(indicators): {len(grouped_with_country)}")
 
     start_time_s = time()
@@ -73,3 +74,33 @@ if __name__ == "__main__":
 
     X_s_gpu, labels_s_gpu = convert_clusters_to_arrays(clusters_f_gpu)
     output_scores(X_s_gpu, labels_s_gpu)
+
+    # --- --- -- Two indicators --- --- ---
+
+    df = pd.read_csv('Indicators-2.csv')
+    first_column = df.columns[0]  # Перша колонка містить назву країни
+    last_column = df.columns[-1]  # Остання колонка містить числові дані
+    grouped_with_country = make_indicator_dictionary(first_column, last_column, 'e')
+    print(f"Countries quantity(two indicators): {len(grouped_with_country)}")
+
+    start_time_e = time()
+    clusters_e, centroids_e = k_means(grouped_with_country, k, 'CPU')
+    cpu_time = time() - start_time_e
+    show_clusters(clusters_e)
+    print(f"CPU Time: {cpu_time:.5f} seconds")
+    print()
+
+    X_e, labels_e = convert_clusters_to_arrays(clusters_e)
+    output_scores(X_e, labels_e)
+
+    start_time_e_gpu = time()
+    clusters_e_gpu, centroids_e_gpu = k_means(grouped_with_country, k, 'GPU')
+    elapsed_time = time() - start_time_e_gpu
+    show_clusters(clusters_e_gpu)
+    print(f"GPU Time: {elapsed_time:.5f} seconds")
+    print()
+
+    X_e_gpu, labels_e_gpu = convert_clusters_to_arrays(clusters_e_gpu)
+    output_scores(X_e_gpu, labels_e_gpu)
+
+    plot_clusters(clusters_e_gpu, centroids_e_gpu, 'Two indicators')
