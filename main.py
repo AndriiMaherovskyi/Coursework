@@ -10,6 +10,9 @@ from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_har
 from time import time
 
 
+region_names = ["Західна Європа", "Східна Європа", "Північна Америка", "Південна Америка", "Азія", "Африка", "Океанія"]
+
+
 def cuda_kernel(data_o, centroids_o):
     # Функція на CUDA для знаходження найближчого центроїда
     cuda_code = """
@@ -99,7 +102,7 @@ def clusters_from_result(assignments, data):
     return clusters
 
 
-def plot_clusters(clusters, centroids, dataset_name, iteration=None):
+def plot_clusters(clusters, centroids, dataset_name, cluster_names=None, iteration=None):
     colors = ['r', 'g', 'b', 'y', 'c', 'm', 'purple', 'orange']
     markers = ['o', 's', 'D', '^', 'P', 'X', 'p']
 
@@ -107,24 +110,27 @@ def plot_clusters(clusters, centroids, dataset_name, iteration=None):
     for cluster_index, cluster_data in clusters.items():
         cluster_points = [list(item.values())[0] for item in cluster_data]
         cluster_points = np.array(cluster_points)
+
+        cluster_label = f'Cluster {cluster_index}'
+        if cluster_names and cluster_index < len(cluster_names):
+            cluster_label = cluster_names[cluster_index]
+
         plt.scatter(cluster_points[:, 0], cluster_points[:, 1],
                     c=colors[cluster_index % len(colors)],
                     marker=markers[cluster_index % len(markers)],
-                    label=f'Cluster {cluster_index}')
+                    label=cluster_label)
 
     # Plot centroids
     if isinstance(centroids, list) and len(centroids) > 0 and isinstance(centroids[0], dict):
         for idx, centroid in enumerate(centroids):
             centroid_values = list(centroid.values())[0]
             plt.scatter(centroid_values[0], centroid_values[1],
-                        c='black', marker='x', s=100, linewidths=3,
-                        label=f'Centroid {idx}')
+                        c='black', marker='x', s=100, linewidths=3)
     else:
         # Assuming centroids is a numpy array
         for idx in range(0, len(centroids), 2):
             plt.scatter(centroids[idx], centroids[idx + 1],
-                        c='black', marker='x', s=100, linewidths=3,
-                        label=f'Centroid {idx // 2}')
+                        c='black', marker='x', s=100, linewidths=3)
 
     if iteration == 0:
         plt.title(f'{dataset_name} Clusters (First iteration)')
@@ -164,7 +170,7 @@ def update_centroids(clusters):
     return centroids
 
 
-def k_means(data, k, ind, max_iterations=100, it=None):
+def k_means(data, k, ind, it=None, max_iterations=100):
     centroids = random.sample(data, k)
     clusters = {}
     for i in range(max_iterations):
@@ -181,7 +187,7 @@ def k_means(data, k, ind, max_iterations=100, it=None):
         )
 
         if i == 0 and it is not None:
-            plot_clusters(clusters, new_centroids, 'K-means Clusters', 0)
+            plot_clusters(clusters, centroids, 'Capitals', region_names, it)
 
         if is_converged:
             break
@@ -315,14 +321,14 @@ if __name__ == "__main__":
 
     # Час виконання на CPU
     start_time_f = time()
-    clusters_f, centroids_f = k_means(grouped_with_country, k, 'CPU')
+    clusters_f, centroids_f = k_means(grouped_with_country, k, 'CPU', 0)
     cpu_time_f = time() - start_time_f
 
     print("Capitals clusters (CPU):")
     show_clusters(clusters_f)
     print(f"CPU Time: {cpu_time_f:.5f} seconds")
     print()
-    plot_clusters(clusters_f, centroids_f, 'Capitals')
+    plot_clusters(clusters_f, centroids_f, 'Capitals', region_names)
 
     # вивід метрик
     X_f, labels_f = convert_clusters_to_arrays(clusters_f)
@@ -337,7 +343,7 @@ if __name__ == "__main__":
     show_clusters(clusters_f_gpu)
     print(f"GPU Time: {gpu_time_f:.5f} seconds")
     print()
-    plot_clusters(clusters_f_gpu, centroids_f_gpu, 'Capitals')
+    # plot_clusters(clusters_f_gpu, centroids_f_gpu, 'Capitals')
 
     # вивід метрик
     X_f_gpu, labels_f_gpu = convert_clusters_to_arrays(clusters_f_gpu)
