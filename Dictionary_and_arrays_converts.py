@@ -12,6 +12,7 @@ from time import time
 #df = pd.read_csv('Worldbank-data-all.csv')
 capitals = pd.read_csv('capitals-location.csv')
 
+
 def make_indicator_dictionary(first_column, last_column, type):
     if type == 'i': df = pd.read_csv('Worldbank-data-all.csv')
     else: df = pd.read_csv('Indicators-2.csv')
@@ -24,7 +25,6 @@ def make_indicator_dictionary(first_column, last_column, type):
     last_elements = last_elements.astype(float)  # перетворюємо в float
 
     # Тепер розділимо цей масив на групи по 13/1492 елементів
-    group_size = int()
     if type == 'i':
         group_size = 1492
     else: group_size = 2

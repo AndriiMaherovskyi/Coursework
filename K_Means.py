@@ -5,6 +5,9 @@ from pycuda import compiler
 
 from plot import plot_clusters
 
+region_names = ["Західна Європа", "Східна Європа", "Північна Америка", "Південна Америка", "Азія", "Африка", "Океанія"]
+
+
 def cuda_kernel(data_o, centroids_o):
     # Функція на CUDA для знаходження найближчого центроїда
     cuda_code = """
@@ -79,6 +82,7 @@ def cuda_kernel(data_o, centroids_o):
 
     return clusters
 
+
 def clusters_from_result(assignments, data):
     clusters = {}
     for idx, cluster_idx in enumerate(assignments):
@@ -91,6 +95,7 @@ def clusters_from_result(assignments, data):
         clusters[cluster_idx].append({country_name: values})
 
     return clusters
+
 
 def assign_to_clusters_cpu(data, centroids):
     clusters = {}
@@ -120,7 +125,15 @@ def update_centroids(clusters):
     return centroids
 
 
-def k_means(data, k, ind, max_iterations=100, it=None):
+cluster_names = [
+    "Середній",
+    "Високий",
+    "Низький",
+    "Задовільний"
+]
+
+
+def k_means(data, k, ind, it=None, max_iterations=100):
     centroids = random.sample(data, k)
     clusters = {}
     for i in range(max_iterations):
@@ -136,8 +149,10 @@ def k_means(data, k, ind, max_iterations=100, it=None):
             for centroid, new_centroid in zip(centroids, new_centroids)
         )
 
-        if i == 0 and it is not None:
-            plot_clusters(clusters, new_centroids, 'K-means Clusters', 0)
+        if i == 0 and it == 0:
+            plot_clusters(clusters, centroids, 'Capitals', region_names, it)
+        elif i == 0 and it == 1:
+            plot_clusters(clusters, centroids, '2-Indicators(First iteration)', cluster_names, it)
 
         if is_converged:
             break
