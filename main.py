@@ -12,6 +12,31 @@ def show_clusters(clusters):
         country_names = [list(item.keys())[0] for item in cluster_data]
         print(f"Cluster {cluster_index}: {country_names}")
 
+# Функція для збору даних на теплову карту
+def arr_for_map(grouped_with_country, grouped_with_country_s):
+
+    for country_data in grouped_with_country:
+        # Отримуємо ключ країни
+        country_key = list(country_data.keys())[0]
+
+        # Шукаємо індекс елементу з таким ключем у grouped_with_country_s
+        index_country_s = next((i for i, item in enumerate(grouped_with_country_s) if country_key in item), None)
+
+
+        # Якщо знайдено індекс, додаємо дані з grouped_with_country_s до відповідного масиву
+        if index_country_s is not None:
+            # Отримуємо значення для ключа з grouped_with_country_s
+            country_s_values = grouped_with_country_s[index_country_s][country_key]
+
+            # Отримуємо значення для ключа з grouped_with_country
+            country_values = country_data[country_key]
+
+            # Злиття значень та оновлення значення в grouped_with_country
+            country_data[country_key] = np.concatenate((country_values, country_s_values))
+
+    return grouped_with_country
+
+
 
 def output_scores(X, labels):
     # Оцінюємо за допомогою різних метрик:
@@ -62,6 +87,15 @@ if __name__ == "__main__":
 
     print("Capitals clusters (GPU):")
     show_clusters(clusters_f_gpu)
+
+    # Вивід даних для теплової карти
+
+    # Масив даних для теплової карти
+    map_data = arr_for_map(grouped_with_country, grouped_with_country_s)
+    print()
+    print("--- --- --- --- --- Data for map --- --- --- --- ---")
+    print(f"Countries quantity(two indicators and capitals): {len(map_data)}")
+    print(map_data)
 
 
 
