@@ -96,6 +96,19 @@ def kluster_all(last_column):
 
     return grouped_array
 
+# Додаємо назву країни до кожного індикатора
+def add_name(first_column, grouped_array):
+    first_column = df[first_column].to_numpy()
+
+    grouped_with_country = []
+    for indicator_line in grouped_array:
+        line = []
+        for idx, indicator in enumerate(indicator_line):
+            country_data = {first_column[idx*1492]: np.array([indicator])}
+            line.append(country_data)
+        grouped_with_country.append(line)
+
+    return grouped_with_country
 
 if __name__ == "__main__":
 
@@ -103,6 +116,17 @@ if __name__ == "__main__":
     first_column = df.columns[0]  # Перша колонка містить назву країни
     last_column = df.columns[-1]  # Остання колонка містить числові дані
     grouped_with_indicators = kluster_all(last_column)
+
+    res = add_name(first_column, grouped_with_indicators)
+
+    # Тест кейс
+    ######################
+    start_time_s = time()
+    for i in res:
+        clusters, centroids = k_means(i, 7, 'CPU')
+    cpu_time = time() - start_time_s
+    print(cpu_time)
+    ######################
 
     start_time_s = time()
     clusters_s, centroids_s = k_means(grouped_with_country, 7, 'CPU')
