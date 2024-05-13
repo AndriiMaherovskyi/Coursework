@@ -2,10 +2,120 @@ import numpy as np
 import random
 import pycuda.driver as cuda
 from pycuda import compiler
-
+import pycuda.autoinit
+from pycuda import gpuarray
+from pycuda.compiler import SourceModule
 from plot import plot_clusters
 
 region_names = ["Західна Європа", "Східна Європа", "Північна Америка", "Південна Америка", "Азія", "Африка", "Океанія"]
+
+
+def cuda_k_means(data, k, max_iterations=100):
+    cuda_code = """
+        #include <float.h>
+
+        __global__ void assign_clusters(float *data, int *labels, float *centroids, int num_arrays, int num_samples_per_array, int k) {
+            int idx = blockIdx.x;
+            if (idx >= num_arrays) return;
+
+            float min_dist, dist, diff;
+            int min_index;
+            int start_index = idx * num_samples_per_array;
+
+            for (int i = 0; i < num_samples_per_array; i++) {
+                min_dist = FLT_MAX;
+                min_index = -1;
+                for (int j = 0; j < k; j++) {
+                    diff = data[start_index + i] - centroids[j];
+                    dist = diff * diff;
+                    if (dist < min_dist) {
+                    
+                        min_dist = dist;
+                        min_index = j;
+                    }
+                }
+                labels[start_index + i] = min_index;
+            }
+        }
+
+        __global__ void update_centroids(float *data, float *centroids, int *labels, int k, int num_samples_per_array, float *new_centroids) {
+            extern __shared__ float shared_data[];  // Подвійний розмір для суми і кількості
+        
+            int idx = blockIdx.x;
+            int start_index = idx * num_samples_per_array;
+            float sum = 0.0;
+            int count = 0;
+        
+            for (int i = 0; i < num_samples_per_array; i++) {
+                if (labels[start_index + i] == threadIdx.x) {
+                    sum += data[start_index + i];
+                    count++;
+                }
+            }
+        
+            // Використання двох сегментів shared_data: один для сум, інший для кількості
+            shared_data[threadIdx.x] = sum;
+            shared_data[threadIdx.x + blockDim.x] = count;  // Збереження кількості у другій половині масиву
+        
+            __syncthreads();
+        
+            if (threadIdx.x < k) {
+                float total_sum = shared_data[threadIdx.x];
+                int total_count = shared_data[threadIdx.x + blockDim.x];
+                if (total_count > 0) {
+                    new_centroids[threadIdx.x] = total_sum / total_count;
+                } else {
+                    new_centroids[threadIdx.x] = centroids[threadIdx.x];
+                }
+            }
+        }
+
+        """
+
+    mod = compiler.SourceModule(cuda_code)
+    assign_clusters = mod.get_function("assign_clusters")
+    update_centroids = mod.get_function("update_centroids")
+
+    # Підготовка даних і запуск алгоритму ...
+    # Зверніть увагу на ці параметри
+    block_size = 373  # 373 масиви в 1 блоці
+    grid_size = 4  # 4 блоки на виконання всіх масивів
+
+    # Підготовка даних для GPU
+    data = data.astype(np.float32)
+
+    centroids = np.random.rand(k * grid_size, data.shape[1]).astype(
+        np.float32).flatten()  # k центроїдів для кожного з grid_size блоків
+
+    data_gpu = gpuarray.to_gpu(data)
+    centroids_gpu = gpuarray.to_gpu(centroids)
+    labels_gpu = gpuarray.zeros(data.shape[0], dtype=np.int32)
+    size_float32 = np.dtype(np.float32).itemsize
+
+    # Ітераційний процес k-середніх
+    for i in range(max_iterations):
+        assign_clusters(data_gpu, labels_gpu, centroids_gpu, np.int32(data.shape[0]), np.int32(data.shape[1]), np.int32(k),
+                        block=(block_size, 1, 1), grid=(grid_size, 1))
+        new_centroids = np.zeros_like(centroids)
+        new_centroids_gpu = gpuarray.to_gpu(new_centroids)
+        update_centroids(data_gpu, centroids_gpu, labels_gpu, np.int32(k), np.int32(data.shape[1]), new_centroids_gpu,
+                         block=(block_size, 1, 1), grid=(grid_size, 1), shared=(4 + 4) * 373 * size_float32)
+        new_centroids = new_centroids_gpu.get()
+
+        if np.allclose(centroids, new_centroids, atol=1e-5):
+            break
+        centroids = new_centroids
+        centroids_gpu.set(centroids)
+
+    labels = labels_gpu.get()
+    centroids = centroids.reshape(-1, data.shape[1])
+
+    # Формування кластерів
+    clusters = {i: [] for i in range(k)}
+    for idx, label in enumerate(labels):
+        clusters[label].append(data[idx])
+
+    return clusters, centroids
 
 
 def cuda_kernel(data_o, centroids_o):
