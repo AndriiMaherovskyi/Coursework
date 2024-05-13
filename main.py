@@ -79,11 +79,13 @@ def add_name(first_column, grouped_array):
         line = []
         for idx, indicator in enumerate(indicator_line):
             country_data = {first_column[idx * 1492]: np.array([indicator])}
+            #country_data = {first_column[idx * 700]: np.array([indicator])}
             line.append(country_data)
         grouped_with_country.append(line)
 
     return grouped_with_country
 
+k = 7
 
 if __name__ == "__main__":
 
@@ -100,25 +102,59 @@ if __name__ == "__main__":
     for i in res:
         clusters_cpu, centroids_cpu = k_means(i, 7, 'CPU')
     cpu_time = time() - start_time_s
-    print(f"Час виконання CPU: {cpu_time}")
-    ######################
-
-    # Тест кейс GPU
-    ######################
-    start_time = time()
-    clusters_gpu, centroids_gpu = cuda_k_means(grouped_with_indicators, 7)
-    gpu_time = time() - start_time
-    print(f"Час виконання GPU: {gpu_time}")
     ######################
 
     grouped_with_country = make_indicator_dictionary(first_column, last_column, 'i')
-    print(f"Countries quantity(indicators): {len(grouped_with_country)}")
-
     clusters_output, centroids_output = k_means(grouped_with_country, 7, 'CPU')
-    show_clusters(clusters_output)
 
-    X_s_gpu, labels_s_gpu = convert_clusters_to_arrays(clusters_output)
-    output_scores(X_s_gpu, labels_s_gpu)
+    # Читаємо CSV-файл
+    capitals = pd.read_csv('capitals-location.csv')
+    name_column = capitals.columns[0]  # Перша колонка містить назву країни
+    coordinate_column = capitals.columns[2:4]  # Остання колонка містить числові дані
+
+    grouped_with_country = make_capital_dictionary(name_column, coordinate_column)
+    print("\n --- --- --- --- --- --- CPU --- --- --- --- ---\n")
+
+    # Час виконання на CPU
+    start_time_country = time()
+    clusters_f, centroids_f = k_means(grouped_with_country, k, 'CPU')
+    cpu_time_country = time() - start_time_country
+
+    grouped_for_result = next_step_clustering_list(clusters_f, clusters_output)
+
+    start_time_combine = time()
+    clusters_combine, centroids_combine = k_means(grouped_for_result, k, 'CPU')
+    show_clusters(clusters_output)
+    cpu_time_combine = time() - start_time_combine
+
+    X_combine, labels_combine = convert_clusters_to_arrays(clusters_combine)
+    output_scores(X_combine, labels_combine)
+
+    print(f"Час виконання CPU: {cpu_time+cpu_time_country+cpu_time_combine}")
+
+    '''----------------------------- GPU -----------------------------'''
+    print("\n --- --- --- --- --- --- GPU --- --- --- --- ---\n")
+    # Тест кейс GPU
+    ######################
+    start_time = time()
+    clusters_gpu_output, centroids_gpu = cuda_k_means(grouped_with_indicators, 7)
+    gpu_time = time() - start_time
+    # print(f"Час виконання GPU: {gpu_time}")
+    ######################
+
+    start_time_country = time()
+    clusters_country, centroids_country = k_means(grouped_with_country, k, 'GPU')
+    gpu_time_country = time() - start_time_country
+
+    start_time_combine = time()
+    clusters_combine_gpu, centroids_combine_gpu = k_means(grouped_for_result, k, 'GPU')
+    show_clusters(clusters_output)
+    gpu_time_combine = time() - start_time_combine
+
+    X_combine, labels_combine = convert_clusters_to_arrays(clusters_combine_gpu)
+    output_scores(X_combine, labels_combine)
+
+    print(f"Час виконання GPU: {gpu_time+gpu_time_country+gpu_time_combine}")
 
 '''
 if __name__ == "__main__":
